@@ -112,7 +112,7 @@ func handleUpdate(upd telego.Update, db *database, bot *telego.Bot) {
 		role = userRole
 	}
 
-	if strings.Contains(m, "чс?") {
+	if strings.Contains(m, " чс A?") {
 		sendMessageIfCheckErrorNoNeed(bot, chatID, "Нахуй спрашиваешь? Тыкни на меня и узнаешь")
 
 		return
@@ -147,17 +147,7 @@ func handleUpdate(upd telego.Update, db *database, bot *telego.Bot) {
 			MStatus[userID] = 1
 			return
 		case m == "не хочу играть":
-			_, exists = EndTimeStatus[Usernames[userID]]
-			if exists {
-				delete(EndTimeStatus, Usernames[userID])
-				delete(StartTimeStatus, Usernames[userID])
-				sendMessageIfCheckErrorNoNeed(bot, chatID, "Удалил тебя, пидорасик")
-
-				return
-			}
-			sendMessageIfCheckErrorNoNeed(bot, chatID, "Ты и так не хотел, долбоеб")
-
-			return
+			dontWannaPlay(bot, chatID)
 
 		case m == "узнать кто играет":
 			whoPlay(bot, chatID)
@@ -211,31 +201,52 @@ func handleUpdate(upd telego.Update, db *database, bot *telego.Bot) {
 
 }
 
+func dontWannaPlay(bot *telego.Bot, userID int64) {
+	_, exists := EndTimeStatus[Usernames[userID]]
+	if exists {
+		delete(EndTimeStatus, Usernames[userID])
+		delete(StartTimeStatus, Usernames[userID])
+		sendMessageIfCheckErrorNoNeed(bot, userID, "Удалил тебя, пидорасик")
+
+		for username, startTime := range StartTimeStatus {
+			_, exists := EndTimeStatus[username]
+			if exists && username != Usernames[userID] {
+
+				start := maximum(startTime, StartTimeStatus[Usernames[userID]])
+				end := minimum(EndTimeStatus[Usernames[userID]], EndTimeStatus[username])
+				if start < end {
+					sendMessageIfCheckErrorNoNeed(bot, groupID, "Просто сообщаю, что этот пидор "+Usernames[userID]+" больше не хочет играть")
+					whoPlay(bot, groupID)
+
+					return
+				}
+
+			}
+		}
+
+		return
+	}
+	sendMessageIfCheckErrorNoNeed(bot, userID, "Ты и так не хотел, долбоеб")
+
+	return
+}
+
 func whoPlay(bot *telego.Bot, userID int64) {
 	msg := "Сегодня играет: \n"
 
-	askUser, err := getUsernameFromUserID(bot, userID, groupID)
-	if err != nil {
-		notFatalButError(err)
-		return
-	}
-
 	for user, startTime := range StartTimeStatus {
-		if user == askUser {
-			continue
+		_, exists := Usernames[userID]
+		if exists {
+			if user == Usernames[userID] {
+				continue
+			}
 		}
-		startTimeString := strconv.Itoa(startTime + 12)
-		if startTime+12 > 23 {
-			startTimeString = strconv.Itoa(startTime - 12)
-		}
-		_, exists := EndTimeStatus[user]
+		startTimeString := timeIntToTimeString(startTime)
+		_, exists = EndTimeStatus[user]
 		if !exists {
 			continue
 		}
-		endTimeString := strconv.Itoa(EndTimeStatus[user] + 12)
-		if EndTimeStatus[user]+12 > 23 {
-			endTimeString = strconv.Itoa(EndTimeStatus[user] - 12)
-		}
+		endTimeString := timeIntToTimeString(EndTimeStatus[user])
 		msg = msg + user + " в " + startTimeString + "ч закончит в " + endTimeString + "ч\n"
 
 	}
@@ -265,7 +276,7 @@ func match(bot *telego.Bot, userID int64) {
 		return
 	}
 
-	msg := "Случилось чудо, у нас мэтч \n" + Usernames[userID] + " "
+	msg := "Случилось чудо, у нас мэтч \n" + Usernames[userID] + " " + timeIntToTimeString(StartTimeStatus[Usernames[userID]]) + "ч-" + timeIntToTimeString(EndTimeStatus[Usernames[userID]]) + "ч\n"
 
 	for username, startTime := range StartTimeStatus {
 		_, exists := EndTimeStatus[username]
@@ -274,28 +285,57 @@ func match(bot *telego.Bot, userID int64) {
 			start := maximum(startTime, StartTimeStatus[Usernames[userID]])
 			end := minimum(EndTimeStatus[Usernames[userID]], EndTimeStatus[username])
 			if start < end {
-				startTimeString := strconv.Itoa(start + 12)
-				if start+12 > 23 {
-					startTimeString = strconv.Itoa(start - 12)
-				}
-				endTimeString := strconv.Itoa(end + 12)
-				if end+12 > 23 {
-					endTimeString = strconv.Itoa(end - 12)
-				}
-				if msg == "Случилось чудо, у нас мэтч "+Usernames[userID] {
-					msg = msg + " идет играть с " + username + " в " + startTimeString + "ч до " + endTimeString + "ч"
-				} else {
-					msg = msg + ", а также с " + username + " в " + startTimeString + "ч до " + endTimeString + "ч"
-				}
+				msg = msg + username + " " + timeIntToTimeString(startTime) + "ч-" + timeIntToTimeString(EndTimeStatus[username]) + "ч\n"
 			}
 
 		}
 	}
-	if msg != "Случилось чудо, у нас мэтч "+Usernames[userID] {
+	if msg != "Случилось чудо, у нас мэтч \n"+Usernames[userID]+" "+timeIntToTimeString(StartTimeStatus[Usernames[userID]])+"ч-"+timeIntToTimeString(EndTimeStatus[Usernames[userID]])+"ч\n" {
 		sendMessageIfCheckErrorNoNeed(bot, groupID, msg)
 	}
 	return
 
+}
+
+func reminder(bot *telego.Bot, userID int64, targetTime time.Time) { //todo сделать нормально, чтобы функция переставала работать
+	//todo если ее вызывают второй раз и не работала, если нет сопартийцев
+	reminderTime := targetTime.Add(-1 * time.Hour)
+
+	fmt.Println(reminderTime)
+	fmt.Println(timeIntToTimeString(StartTimeStatus[Usernames[userID]]))
+	fmt.Println(targetTime.Format("15"))
+
+	if reminderTime.After(time.Now()) {
+		time.Sleep(time.Until(reminderTime))
+
+		if timeIntToTimeString(StartTimeStatus[Usernames[userID]]) == targetTime.Format("15") || "0"+timeIntToTimeString(StartTimeStatus[Usernames[userID]]) == targetTime.Format("15") {
+			err := sendMessage(bot, userID, "Напоминаю, что ты хотел играть через час")
+			if err != nil {
+				notFatalButError(err)
+				return
+			}
+			whoPlay(bot, userID)
+		}
+	}
+
+	return
+}
+
+func getChatIDForUserID(username string) (chatID int64) {
+	for chatID, user := range Usernames {
+		if user == username {
+			return chatID
+		}
+	}
+	return 0
+}
+
+func timeIntToTimeString(time int) string {
+	timeString := strconv.Itoa(time + 12)
+	if time+12 > 23 {
+		timeString = strconv.Itoa(time - 12)
+	}
+	return timeString
 }
 
 func removeDuplicates(input string) string {
@@ -376,7 +416,8 @@ func endTimePlay(bot *telego.Bot, userID int64, hour string) bool {
 
 }
 
-func startTimePlay(bot *telego.Bot, userID int64, hour string) {
+func startTimePlay(bot *telego.Bot, userID int64, hour string) { //need help. Надо придумать как сделать так,
+	//чтобы не появлялось часть кнопок.
 
 	hourInt, err := strconv.Atoi(strings.TrimSuffix(hour, "ч"))
 	if err != nil {
@@ -411,6 +452,14 @@ func startTimePlay(bot *telego.Bot, userID int64, hour string) {
 
 	sendTimeSelectionKeyboard(bot, userID, "Теперь выбери во сколько хочешь закончить играть", hourForStatus)
 	MStatus[userID] = 2
+
+	now := time.Now()
+	targetTime := time.Date(now.Year(), now.Month(), now.Day(), hourInt, 0, 0, 0, now.Location())
+	if hourInt >= 0 && hourInt <= 11 {
+		tomorrowDay := now.Day() + 1
+		targetTime = time.Date(now.Year(), now.Month(), tomorrowDay, hourInt, 0, 0, 0, now.Location())
+	}
+	go reminder(bot, userID, targetTime)
 
 	return
 }
@@ -587,6 +636,9 @@ func deleteBucketEveryNoon(db *database, stopChan chan struct{}) {
 		case <-noonCh:
 		}
 		err := db.ResetBucket(playersTodayBucket)
+		MStatus = make(map[int64]int)
+		StartTimeStatus = make(map[string]int)
+		EndTimeStatus = make(map[string]int)
 		if err != nil {
 			notFatalButError(err)
 			continue
