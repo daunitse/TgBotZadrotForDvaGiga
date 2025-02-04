@@ -112,7 +112,7 @@ func handleUpdate(upd telego.Update, db *database, bot *telego.Bot) {
 		role = userRole
 	}
 
-	if strings.Contains(m, " чс A?") {
+	if strings.Contains(m, "чс?") {
 		sendMessageIfCheckErrorNoNeed(bot, chatID, "Нахуй спрашиваешь? Тыкни на меня и узнаешь")
 
 		return
