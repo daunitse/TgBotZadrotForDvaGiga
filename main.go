@@ -112,6 +112,10 @@ func handleUpdate(upd telego.Update, db *database, bot *telego.Bot) {
 		role = userRole
 	}
 
+	if m == "kill" && role == adminRole { //Чтобы тебе не заходить лишний раз на хост машину, если захочу опять у себя похостить
+		os.Exit(1)
+	}
+
 	if strings.Contains(m, "чс?") {
 		sendMessageIfCheckErrorNoNeed(bot, chatID, "Нахуй спрашиваешь? Тыкни на меня и узнаешь")
 
